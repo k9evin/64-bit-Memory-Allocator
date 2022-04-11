@@ -94,7 +94,7 @@ static struct free_blk *extend_heap(size_t words);
 static void *place(void *bp, size_t asize);
 static void *find_fit(size_t asize);
 static struct free_blk *coalesce(struct free_blk *bp);
-
+static void push_free_blk(struct free_blk *bp, size_t size);
 static void init_list();
 
 /* Given a block, obtain previous's block footer.
@@ -256,7 +256,7 @@ void *mm_malloc(size_t size) {
 
     /* No fit found. Get more memory and place the block */
     size_t extendwords = max(awords, CHUNKSIZE); /* Amount to extend heap if no fit */
-    if ((bp = extend_heap(extendwords)) == NULL)
+    if ((bp = (struct block*)extend_heap(extendwords)) == NULL)
         return NULL;
 
     new_block = bp;
