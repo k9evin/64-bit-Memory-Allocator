@@ -293,14 +293,14 @@ static struct free_blk *coalesce(struct free_blk *bp) {
     if (prev_alloc && next_alloc) { /* Case 1 */
         // both are allocated, nothing to coalesce
         // return bp;
-        insert(bp, size);
+        push_free_blk(bp, size);
     }
 
     else if (prev_alloc && !next_alloc) { /* Case 2 */
         // combine this block and next block by extending it
         list_remove(&next_blk(bp)->elem);
         mark_block_free(bp, size + blk_size(next_blk(bp)));
-        insert(bp, blk_size(bp));
+        push_free_blk(bp, blk_size(bp));
     }
 
     else if (!prev_alloc && next_alloc) { /* Case 3 */
@@ -308,7 +308,7 @@ static struct free_blk *coalesce(struct free_blk *bp) {
         bp = prev_blk(bp);
         list_remove(&bp->elem);
         mark_block_free(bp, size + blk_size(bp));
-        insert(bp, blk_size(bp));
+        push_free_blk(bp, blk_size(bp));
     }
 
     else { /* Case 4 */
@@ -317,7 +317,7 @@ static struct free_blk *coalesce(struct free_blk *bp) {
         list_remove(&prev_blk(bp)->elem);
         mark_block_free(prev_blk(bp), size + blk_size(next_blk(bp)) + blk_size(prev_blk(bp)));
         bp = prev_blk(bp);
-        insert(bp, blk_size(bp));
+        push_free_blk(bp, blk_size(bp));
     }
     return bp;
 }
@@ -379,7 +379,7 @@ void *mm_realloc(void *ptr, size_t size) {
                 mark_block_used(oldblock, awords);
                 struct free_blk *new_blk = (struct free_blk *)((size_t *)oldblock + oldblock->header.size);
                 mark_block_free(new_blk, oldsize + new_size - awords);
-                insert(new_blk, blk_size(new_blk));
+                push_free_blk(new_blk, blk_size(new_blk));
             } else {
                 list_remove(&new_bp->elem);
                 mark_block_used(oldblock, oldsize + new_size);
@@ -408,7 +408,7 @@ void *mm_realloc(void *ptr, size_t size) {
             mark_block_used(oldblock, awords);
             struct free_blk *new_bp = (struct free_blk *)((size_t *)oldblock + awords);
             mark_block_free(new_bp, oldsize - awords);
-            insert(new_bp, blk_size(new_bp));
+            push_free_blk(new_bp, blk_size(new_bp));
         }
         return ptr;
     }
@@ -432,6 +432,35 @@ void mm_checkheap(int verbose) {
 /*
  * The remaining routines are internal helper routines
  */
+
+
+/*
+ * push_free_blk - Push a free block onto the free list
+ */
+static void push_free_blk(struct free_blk *bp, size_t size) {
+    struct list_elem *before = &bp->elem;
+    // choose the list with appropriate size
+    int i = 0;
+    while (i < NUM_LIST - 1 && size > 1) {
+        size = size >> 1;
+        i++;
+    }
+
+    if (list_empty(&free_list[i])) {
+        list_push_front(&free_list[i], before);
+    } else {
+        struct list_elem *e = list_begin(&free_list[i]);
+        size_t free_size = blk_size(get_block(e));
+        while (e != list_end(&free_list[i])) {
+            if (free_size >= size) {
+                break;
+            }
+            e = list_next(e);
+            free_size = blk_size(get_block(e));
+        }
+        list_insert(e, before);
+    }
+}
 
 /*
  * extend_heap - Extend heap with free block and return its block pointer !!!
