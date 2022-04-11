@@ -91,8 +91,8 @@ static struct list free_list[NUM_LIST];
 
 /* Function prototypes for internal helper routines */
 static struct free_blk *extend_heap(size_t words);
-static void place(void *bp, size_t asize);
-static struct free_blk *find_fit(size_t asize);
+static void *place(void *bp, size_t asize);
+static void *find_fit(size_t asize);
 static struct free_blk *coalesce(struct free_blk *bp);
 
 static void init_list();
