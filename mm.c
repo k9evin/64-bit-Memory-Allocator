@@ -98,7 +98,7 @@ static struct list free_list[NUM_LIST];
 /* Function prototypes for internal helper routines */
 static struct free_blk *extend_heap(size_t words);
 static void place(struct block *bp, size_t asize);
-static struct block *find_fit(size_t asize);
+static struct free_blk *find_fit(size_t asize);
 static struct free_blk *coalesce(struct free_blk *bp);
 
 static void init_list();
@@ -475,7 +475,7 @@ void mm_checkheap(int verbose)
 /*
  * extend_heap - Extend heap with free block and return its block pointer
  */
-static struct block *extend_heap(size_t words)
+static struct free *extend_heap(size_t words)
 {
     void *bp = mem_sbrk(words * WSIZE);
 
@@ -515,10 +515,10 @@ static void place(struct block *bp, size_t asize)
 /*
  * find_fit - Find a fit for a block with asize words
  */
-static struct block *find_fit(size_t asize)
+static struct free_blk *find_fit(size_t asize)
 {
     /* First fit search */
-    for (struct block *bp = heap_listp; blk_size(bp) > 0; bp = next_blk(bp))
+    for (struct free_blk *bp = heap_list; blk_size(bp) > 0; bp = next_blk(bp))
     {
         if (blk_free(bp) && asize <= blk_size(bp))
         {
