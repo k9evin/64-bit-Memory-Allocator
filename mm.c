@@ -499,11 +499,11 @@ static struct free_blk *find_fit(size_t asize)
 
 team_t team = {
     /* Team name */
-    "Sample allocator using implicit lists",
+    "Kevin and Kevin",
     /* First member's full name */
-    "Godmar Back",
-    "gback@cs.vt.edu",
+    "Mingkai Pang",
+    "pangmin@vt.edu",
     /* Second member's full name (leave blank if none) */
-    "",
-    "",
+    "Jiayue Lin",
+    "jiayuelin@vt.edu",
 };
