@@ -92,7 +92,7 @@ static struct list free_list[NUM_LIST];
 /* Function prototypes for internal helper routines */
 static struct free_blk *extend_heap(size_t words);
 static void place(struct block *bp, size_t asize);
-static struct block *find_fit(size_t asize);
+static struct free_blk *find_fit(size_t asize);
 static struct free_blk *coalesce(struct free_blk *bp);
 
 static void init_list();
@@ -469,11 +469,29 @@ static void place(void *bp, size_t asize) {
 /*
  * find_fit - Find a fit for a block with asize words
  */
-static struct block *find_fit(size_t asize) {
+static struct free_blk *find_fit(size_t asize)
+{
     /* First fit search */
-    for (struct block *bp = heap_listp; blk_size(bp) > 0; bp = next_blk(bp)) {
-        if (blk_free(bp) && asize <= blk_size(bp)) {
-            return bp;
+    int new_list = 0;
+    size_t new_size = asize;
+    struct free_blk *break_pointer = NULL;
+
+    while ((new_list < NUM_LIST - 1) && (new_size > 1)){
+        new_size = new_size >> 1;
+        new_list++;
+    }
+
+    for (int new_list = 0; new_list < NUM_LIST; new_list++){
+        if (list_empty(&free_list[new_list])){
+            continue;
+        }
+
+        for (struct list_elem *element = list_begin(&free_list[new_list]); element != list_end(&free_list[new_list]); element = list_next(element)){
+            break_pointer = get_block(element);
+
+            if (blk_size(break_pointer) >= asize){
+                return break_pointer;
+
         }
     }
     return NULL; /* No fit */
