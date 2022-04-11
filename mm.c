@@ -110,9 +110,9 @@ static struct boundary_tag *next_blk_header(struct free_blk *blk) {
 }
 
 /* Return if block is free */
-static bool blk_free(struct block *blk) {
-    return !blk->header.inuse;
-}
+// static bool blk_free(struct block *blk) {
+//     return !blk->header.inuse;
+// }
 
 /* Return size of block is free */
 static size_t blk_size(struct free_blk *blk) {
@@ -346,7 +346,7 @@ void *mm_realloc(void *ptr, size_t size) {
 
     /* Copy the old data. */
     struct block *oldblock = ptr - offsetof(struct block, payload);
-    size_t oldsize = blk_size(oldblock) * WSIZE;
+    size_t oldsize = oldblock->header.size;
 
     /* Adjust block size to include overhead and alignment reqs. */
     size += 2 * sizeof(struct boundary_tag); /* account for tags */
@@ -389,7 +389,7 @@ void *mm_realloc(void *ptr, size_t size) {
         }
         /*If the next block pointer is free and there is no space for reallocation.*/
         else {
-            if (is_fence(new_blk(new_bp))) {
+            if (is_fence(next_blk(new_bp))) {
                 size_t extendwords = max(awords - oldsize - blk_size(new_bp), CHUNKSIZE);
                 if ((void *)extend_heap(extendwords) == NULL) {
                     return NULL;
@@ -531,7 +531,7 @@ static void *find_fit(size_t asize)
 
             if (blk_size(break_pointer) >= asize){
                 return break_pointer;
-
+            }
         }
     }
     return NULL; /* No fit */
