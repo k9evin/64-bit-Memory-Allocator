@@ -121,7 +121,7 @@ static size_t blk_size(struct free_blk *blk) {
 
 /* Given a list element, return the block. */
 static struct free_blk *get_block(struct list_elem *e) {
-    return (struct free_block *)((size_t *)e - sizeof(struct boundary_tag) / WSIZE);
+    return (struct free_blk *)((size_t *)e - sizeof(struct boundary_tag) / WSIZE);
 }
 
 /* Given a block, obtain pointer to previous block.
@@ -141,6 +141,11 @@ static struct free_blk *next_blk(struct free_blk *blk) {
 
 /* Given a block, obtain its footer boundary tag */
 static struct boundary_tag *get_footer(struct block *blk) {
+    return (void *)((size_t *)((size_t *)blk + ((struct block *)blk)->header.size) - sizeof(struct boundary_tag) / WSIZE);
+}
+
+/* Given a block, obtain its footer boundary tag */
+static struct boundary_tag *get_footer_free(struct free_blk *blk) {
     return (void *)((size_t *)((size_t *)blk + ((struct free_blk *)blk)->header.size) - sizeof(struct boundary_tag) / WSIZE);
 }
 
@@ -149,6 +154,12 @@ static void set_header_and_footer(struct block *blk, int size, int inuse) {
     blk->header.inuse = inuse;
     blk->header.size = size;
     *get_footer(blk) = blk->header; /* Copy header to footer */
+}
+
+static void set_header_and_footer_free(struct free_blk *blk, int size, int inuse) {
+    blk->header.inuse = inuse;
+    blk->header.size = size;
+    *get_footer_free(blk) = blk->header; /* Copy header to footer */
 }
 
 /* Check if the boundary_tag is FENCE */
@@ -163,7 +174,7 @@ static void mark_block_used(struct block *blk, int size) {
 
 /* Mark a block as free and set its size. */
 static void mark_block_free(struct free_blk *blk, int size) {
-    set_header_and_footer(blk, size, 0);
+    set_header_and_footer_free(blk, size, 0);
 }
 
 /*
@@ -478,7 +489,7 @@ static struct free_blk *extend_heap(size_t words) {
  * place - Place block of asize words at start of free block bp
  *         and split if remainder would be at least minimum block size !!!
  */
-static void place(void *bp, size_t asize) {
+static void *place(void *bp, size_t asize) {
     void *block;
 
     size_t csize = blk_size(bp);
@@ -498,12 +509,12 @@ static void place(void *bp, size_t asize) {
 /*
  * find_fit - Find a fit for a block with asize words
  */
-static struct free_blk *find_fit(size_t asize)
+static void *find_fit(size_t asize)
 {
     /* First fit search */
     int new_list = 0;
     size_t new_size = asize;
-    struct free_blk *break_pointer = NULL;
+    struct free_blk *break_pointer;
 
     while ((new_list < NUM_LIST - 1) && (new_size > 1)){
         new_size = new_size >> 1;
@@ -525,6 +536,8 @@ static struct free_blk *find_fit(size_t asize)
     }
     return NULL; /* No fit */
 }
+
+
 
 team_t team = {
     /* Team name */
