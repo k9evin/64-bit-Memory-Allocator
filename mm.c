@@ -99,16 +99,10 @@ static struct boundary_tag *prev_blk_footer(struct free_blk *blk) {
     return &blk->header - 1;
 }
 
-/* Given a block, obtain next's block header.
-   Works for left-most block also. */
-static struct boundary_tag *next_blk_header(struct free_blk *blk) {
-    return (struct boundary_tag *)((size_t *)blk + blk->header.size);
-}
-
 /* Return if block is free */
-// static bool blk_free(struct block *blk) {
-//     return !blk->header.inuse;
-// }
+static bool blk_free(struct free_blk *blk) {
+    return !blk->header.inuse;
+}
 
 /* Return size of block is free */
 static size_t blk_size(struct free_blk *blk) {
@@ -387,7 +381,7 @@ static void init_list() {
  */
 static struct free_blk *coalesce(struct free_blk *bp) {
     bool prev_alloc = prev_blk_footer(bp)->inuse; /* is previous block allocated? */
-    bool next_alloc = next_blk_header(bp)->inuse; /* is next block allocated? */
+    bool next_alloc = !blk_free(next_blk(bp));    /* is next block allocated? */
     size_t size = blk_size(bp);
 
     if (prev_alloc && next_alloc) { /* Case 1 */
