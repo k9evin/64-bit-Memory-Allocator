@@ -554,7 +554,7 @@ static void *place(void *bp, size_t asize)
     {
         mark_block_free((struct free_blk *)bp, csize - asize);
         block = (size_t *)bp + ((struct free_blk *)bp)->header.size;
-        mark_block_used((struct block *)bp, asize);
+        mark_block_used((struct block *)block, asize);
         return block;
     }
     else
