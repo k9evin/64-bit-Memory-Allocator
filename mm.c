@@ -256,7 +256,7 @@ void *mm_malloc(size_t size) {
 
     /* No fit found. Get more memory and place the block */
     size_t extendwords = max(awords, CHUNKSIZE); /* Amount to extend heap if no fit */
-    if ((bp = (struct block *)extend_heap(extendwords)) == NULL)
+    if ((bp = (void *)extend_heap(extendwords)) == NULL)
         return NULL;
 
     new_block = bp;
@@ -541,3 +541,4 @@ team_t team = {
     "Jiayue Lin",
     "jiayuelin@vt.edu",
 };
+
