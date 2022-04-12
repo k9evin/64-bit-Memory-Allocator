@@ -42,8 +42,7 @@ struct boundary_tag {
 /* FENCE is used for heap prologue/epilogue. */
 const struct boundary_tag FENCE = {
     .inuse = 1,
-    .size = 0
-};
+    .size = 0};
 
 /* A C struct describing the beginning of each block.
  * For implicit lists, used and free blocks have the same
@@ -63,11 +62,11 @@ struct free_blk {
 };
 
 /* Basic constants and macros */
-#define WSIZE sizeof(struct boundary_tag)       /* Word and header/footer size (bytes) */
-#define DSIZE 2 * sizeof(struct boundary_tag)   /* Doubleword size (bytes) */
-#define MIN_BLOCK_SIZE_WORDS 4                  /* Minimum block size in words */
-#define CHUNKSIZE (1 << 10)                     /* Extend heap by this amount (words) */
-#define NUM_LIST 20                             /* Number of segregated list */
+#define WSIZE sizeof(struct boundary_tag)     /* Word and header/footer size (bytes) */
+#define DSIZE 2 * sizeof(struct boundary_tag) /* Doubleword size (bytes) */
+#define MIN_BLOCK_SIZE_WORDS 4                /* Minimum block size in words */
+#define CHUNKSIZE (1 << 10)                   /* Extend heap by this amount (words) */
+#define NUM_LIST 20                           /* Number of segregated list */
 
 static inline size_t max(size_t x, size_t y) {
     return x > y ? x : y;
@@ -180,7 +179,7 @@ static void mark_block_free(struct free_blk *blk, int size) {
 int mm_init(void) {
     init_list();
     assert(offsetof(struct alloc_blk, payload) == 4);
-    assert (sizeof(struct boundary_tag) == 4);
+    assert(sizeof(struct boundary_tag) == 4);
 
     /* Create the initial empty heap */
     struct boundary_tag *initial = mem_sbrk(4 * sizeof(struct boundary_tag));
@@ -258,7 +257,7 @@ void *mm_malloc(size_t size) {
  * mm_free - Free a block
  */
 void mm_free(void *bp) {
-    // assert (heap_listp != 0);       // assert that mm_init was called
+    assert (segregated_list != NULL);       // assert that mm_init was called
     if (bp == 0)
         return;
 
@@ -271,7 +270,6 @@ void mm_free(void *bp) {
     mark_block_free(free_blk, blk_size(free_blk));
     coalesce(free_blk);
 }
-
 
 /*
  * mm_realloc - Naive implementation of realloc
@@ -487,7 +485,7 @@ static void *place(void *bp, size_t asize) {
 
     if ((csize - asize) >= MIN_BLOCK_SIZE_WORDS) {
         mark_block_free((struct free_blk *)bp, csize - asize);
-        block = (size_t *)bp + ((struct free_blk *)bp)->header.size;
+        block = next_blk(bp);
         mark_block_used((struct alloc_blk *)block, asize);
         return block;
     } else {
