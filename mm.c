@@ -283,7 +283,7 @@ void *mm_malloc(size_t size)
 
     /* No fit found. Get more memory and place the block */
     size_t extendwords = max(awords, CHUNKSIZE); /* Amount to extend heap if no fit */
-    if ((bp = (struct block *)extend_heap(extendwords)) == NULL)
+    if ((bp = (void *)extend_heap(extendwords)) == NULL)
         return NULL;
 
     new_block = bp;
@@ -581,7 +581,7 @@ static void *find_fit(size_t asize)
         new_list++;
     }
 
-    for (int new_list = 0; new_list < NUM_LIST; new_list++)
+    for (; new_list < NUM_LIST; new_list++)
     {
         if (list_empty(&free_list[new_list]))
         {
@@ -611,3 +611,4 @@ team_t team = {
     "Jiayue Lin",
     "jiayuelin@vt.edu",
 };
+
