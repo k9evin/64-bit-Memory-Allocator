@@ -33,15 +33,16 @@
 #include "memlib.h"
 
 struct boundary_tag {
-    int inuse : 1;  // inuse bit
-    int size : 31;  // size of block, in words
-                    // block size
+    size_t inuse : 1;  // inuse bit
+    size_t size : 31;  // size of block, in words
+                       // block size
 };
 
 /* FENCE is used for heap prologue/epilogue. */
 const struct boundary_tag FENCE = {
     .inuse = 1,
-    .size = 0};
+    .size = 0
+};
 
 /* A C struct describing the beginning of each block.
  * For implicit lists, used and free blocks have the same
@@ -180,7 +181,7 @@ static void mark_block_free(struct free_blk *blk, int size) {
  * mm_init - Initialize the memory manager
  */
 int mm_init(void) {
-    init_lists();
+    init_list();
     // assert (offsetof(struct block, payload) == 4);
     // assert (sizeof(struct boundary_tag) == 4);
 
@@ -256,7 +257,7 @@ void *mm_malloc(size_t size) {
 
     /* No fit found. Get more memory and place the block */
     size_t extendwords = max(awords, CHUNKSIZE); /* Amount to extend heap if no fit */
-    if ((bp = (void *)extend_heap(extendwords)) == NULL)
+    if ((bp = (struct block *)extend_heap(extendwords)) == NULL)
         return NULL;
 
     new_block = bp;
@@ -322,106 +323,105 @@ static struct free_blk *coalesce(struct free_blk *bp) {
 
     return bp;
 }
-
 /*
  * mm_realloc - Naive implementation of realloc
  */
 void *mm_realloc(void *ptr, size_t size) {
-    /* If size == 0 then this is just free, and we return NULL. */
+    size_t osize = size;
+
+    /* If the pointer block is NULL, realloc should be the same as malloc */
+    if (ptr == NULL)
+        return mm_malloc(size);
+
+    /* If the size if 0, free the block and return 0 */
     if (size == 0) {
         mm_free(ptr);
-        return 0;
+        return NULL;
     }
 
-    /* If oldptr is NULL, then this is just malloc. */
-    if (ptr == NULL) {
-        return mm_malloc(size);
-    }
-
-    void *newptr = mm_malloc(size);
-
-    /* If realloc() fails the original block is left untouched  */
-    if (!newptr) {
-        return 0;
-    }
-
-    /* Copy the old data. */
-    struct block *oldblock = ptr - offsetof(struct block, payload);
-    size_t oldsize = oldblock->header.size;
-
-    /* Adjust block size to include overhead and alignment reqs. */
-    size += 2 * sizeof(struct boundary_tag); /* account for tags */
-
-    /* Adjusted block size in words */
-    size_t awords = max(MIN_BLOCK_SIZE_WORDS, align(size) / WSIZE); /* respect minimum size */
-
-    /*Case 3: When the new size is less than the oldsize*/
-    if (awords <= oldsize) {
-        if (oldsize - awords >= MIN_BLOCK_SIZE_WORDS) {
-            mark_block_used(oldblock, awords);
-            struct free_blk *new_bp = (struct free_blk *)((size_t *)oldblock + awords);
-            mark_block_free(new_bp, oldsize - awords);
-            push_free_blk(new_bp, blk_size(new_bp));
-        }
-        return ptr;
-    }
-
-    /*This is the next block pointer*/
-    struct free_blk *new_bp = (struct free_blk *)((size_t *)oldblock + oldsize);
+    size_t oldsize;
     size_t extendwords;
 
-    /*Case 1: When the break pointer is at the last block in the heap*/
-    if (is_fence(new_bp)) {
-        extendwords = max(awords - oldsize, CHUNKSIZE);
-        if ((new_bp = (void *)extend_heap(extendwords)) == NULL) {
-            return NULL;
-        }
-        list_remove(&new_bp->elem);
-        mark_block_used(oldblock, oldsize + blk_size(new_bp));
+    struct block *oldblock = ptr - offsetof(struct block, payload);
+    oldsize = oldblock->header.size;
 
+    size += 2 * sizeof(struct boundary_tag);                /* account for tags */
+    size = (size + DSIZE - 1) & ~(DSIZE - 1);               /* align to double word */
+    size_t asize = max(MIN_BLOCK_SIZE_WORDS, size / WSIZE); /* respect minimum size */
+
+    // In the following four cases we can eliminate copying the payload
+
+    /* Case 1: new size is smaller than oldsize, split block and return ptr */
+    if (asize <= oldsize) {
+        if (oldsize - asize >= MIN_BLOCK_SIZE_WORDS) {
+            mark_block_used(oldblock, asize);
+            struct free_blk *next_bp = (struct free_blk *)((size_t *)oldblock + asize);
+            mark_block_free(next_bp, oldsize - asize);
+            push_free_blk(next_bp, blk_size(next_bp));
+        }
         return ptr;
     }
 
-    /*Case 2: When the next block pointer is not used.*/
-    if (new_bp->header.inuse == 0) {
-        /*If the next block pointer is free and there is space for reallocation.*/
-        if (awords <= oldsize + blk_size(new_bp)) {
-            size_t new_size = blk_size(new_bp);
-            if (oldsize + new_size - awords >= MIN_BLOCK_SIZE_WORDS) {
-                list_remove(&new_bp->elem);
-                mark_block_used(oldblock, awords);
+    // Get next block
+    struct free_blk *next_bp = (struct free_blk *)((size_t *)oldblock + oldsize);
+
+    /* Case 2: ptr is the last block in the heap, extend the heap and coalesce mutually */
+    if (is_fence(next_bp)) {
+        extendwords = max(asize - oldsize, CHUNKSIZE);
+        if ((next_bp = (void *)extend_heap(extendwords)) == NULL)
+            return NULL;
+        list_remove(&next_bp->elem);
+        mark_block_used(oldblock, oldsize + blk_size(next_bp));
+        return ptr;
+    }
+
+    // If next block is free
+    if (next_bp->header.inuse == 0) {
+        /* Case 3: next block is a free block and have enough space to reallocate,
+           coalesce two blocks mutually */
+        if (asize <= oldsize + blk_size(next_bp)) {
+            size_t next_size = blk_size(next_bp);
+            if (oldsize + next_size - asize >= MIN_BLOCK_SIZE_WORDS) {
+                list_remove(&next_bp->elem);
+                mark_block_used(oldblock, asize);
                 struct free_blk *new_blk = (struct free_blk *)((size_t *)oldblock + oldblock->header.size);
-                mark_block_free(new_blk, oldsize + new_size - awords);
+                mark_block_free(new_blk, oldsize + next_size - asize);
                 push_free_blk(new_blk, blk_size(new_blk));
             } else {
-                list_remove(&new_bp->elem);
-                mark_block_used(oldblock, oldsize + new_size);
+                list_remove(&next_bp->elem);
+                mark_block_used(oldblock, oldsize + next_size);
             }
-
             return ptr;
         }
-        /*If the next block pointer is free and there is no space for reallocation.*/
-        else {
-            if (is_fence(next_blk(new_bp))) {
-                extendwords = max(awords - oldsize - blk_size(new_bp), CHUNKSIZE);
-                if ((void *)extend_heap(extendwords) == NULL) {
-                    return NULL;
-                }
-                list_remove(&new_bp->elem);
-                mark_block_used(oldblock, oldsize + blk_size(new_bp));
 
+        /* Case 4: next block is a free block but do not have enough space to reallocate,
+           but next block is the last block in the heap,
+           extend the heap and coalesce two blocks mutually */
+        else {
+            if (is_fence(next_blk(next_bp))) {
+                extendwords = max(asize - oldsize - blk_size(next_bp), CHUNKSIZE);
+                if ((void *)extend_heap(extendwords) == NULL)
+                    return NULL;
+                list_remove(&next_bp->elem);
+                mark_block_used(oldblock, oldsize + blk_size(next_bp));
                 return ptr;
             }
         }
     }
 
-    /*Copy the old data.*/
+    void *newptr = mm_malloc(osize);
+
+    /* If malloc() fails, the original block is left untouched  */
+    if (!newptr) {
+        return 0;
+    }
+
+    /* Copy the old data. */
     oldsize *= WSIZE;
     memcpy(newptr, ptr, oldsize);
 
     /* Free the old block. */
     mm_free(ptr);
-
     return newptr;
 }
 
@@ -541,4 +541,3 @@ team_t team = {
     "Jiayue Lin",
     "jiayuelin@vt.edu",
 };
-
