@@ -215,7 +215,7 @@ int mm_init(void)
 
     /* Extend the empty heap with a free block of CHUNKSIZE bytes */
     if (extend_heap(CHUNKSIZE) == NULL)
-        /*Return -1 if there is a problem during the initialization process.*/
+        /*Return -1 if there is a problem during the initialization process, otherwise 0.*/
         return -1;
     return 0;
 }
@@ -248,6 +248,7 @@ void *mm_malloc(size_t size)
         size = t_size;
     }
 
+    /* If the segregated list is empty, then call mm_init() for initialization*/
     if (segregated_list[0].head.next == NULL)
     {
         mm_init();
@@ -274,6 +275,8 @@ void *mm_malloc(size_t size)
 
     new_block = bp;
     bp = place(new_block, awords);
+    
+    /* Returns a pointer to an allocated block payload.*/
     return bp->payload;
 }
 
