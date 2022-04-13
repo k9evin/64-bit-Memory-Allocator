@@ -286,16 +286,22 @@ void *mm_malloc(size_t size)
 void mm_free(void *bp)
 {
     assert(segregated_list != NULL); // assert that mm_init was called
+    
+    /*Return nothing*/
     if (bp == 0)
         return;
 
     /* Find block from user pointer */
     struct free_blk *free_blk = bp - offsetof(struct alloc_blk, payload);
 
+    /* If the segregated list is empty, then call mm_init() for initialization*/
     if (segregated_list[0].head.next == NULL)
         mm_init();
 
+    /* Set the block as free */
     mark_block_free(free_blk, blk_size(free_blk));
+    
+    /* Coalesce the block */
     coalesce(free_blk);
 }
 
