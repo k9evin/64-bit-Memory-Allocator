@@ -174,6 +174,7 @@ int mm_init(void) {
     init_list();
     assert(offsetof(struct alloc_blk, payload) == 4);
     assert(sizeof(struct boundary_tag) == 4);
+    assert(sizeof(struct free_blk) == 4);
 
     /* Create the initial empty heap */
     struct boundary_tag *initial = mem_sbrk(4 * sizeof(struct boundary_tag));
