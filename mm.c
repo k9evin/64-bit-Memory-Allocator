@@ -1,5 +1,5 @@
 /*
- * Simple, 64-bit allocator based on implicit free lists,
+ * Simple, 64-bit allocator based on explicit free lists,
  * first fit placement, and boundary tag coalescing, as described
  * in the CS:APP2e text. Blocks must be aligned to 16 byte
  * boundaries. Minimum block size is 16 bytes.
@@ -9,14 +9,7 @@
  * but unlike the book's version, it does not use C preprocessor
  * macros or explicit bit operations.
  *
- * It follows the book in counting in units of 4-byte words,
- * but note that this is a choice (my actual solution chooses
- * to count everything in bytes instead.)
- *
- * You may use this code as a starting point for your implementation
- * if you want.
- *
- * Adapted for CS3214 Summer 2020 by gback
+ * Our implementation is adapted from the provided code by Dr. Back
  */
 
 #include "mm.h"
@@ -33,17 +26,17 @@
 #include "list.h"
 #include "memlib.h"
 
-struct boundary_tag
-{
-    size_t inuse : 1; // inuse bit
-    size_t size : 31; // size of block, in words
-                      // block size
+struct boundary_tag {
+    size_t inuse : 1;  // inuse bit
+    size_t size : 31;  // size of block, in words
+                       // block size
 };
 
 /* FENCE is used for heap prologue/epilogue. */
 const struct boundary_tag FENCE = {
-    .inuse = 1,
-    .size = 0};
+    .inuse = 1,  // inuse bit
+    .size = 0    // size of block, in words
+};
 
 /* A C struct describing the beginning of each block.
  * For implicit lists, used and free blocks have the same
@@ -52,14 +45,12 @@ const struct boundary_tag FENCE = {
  * If each block is aligned at 12 mod 16, each payload will
  * be aligned at 0 mod 16.
  */
-struct alloc_blk
-{
+struct alloc_blk {
     struct boundary_tag header; /* offset 0, at address 12 mod 16 */
     char payload[0];            /* offset 4, at address 0 mod 16 */
 };
 
-struct free_blk
-{
+struct free_blk {
     struct boundary_tag header; /* offset 0, at address 12 mod 16 */
     struct list_elem elem;      /* position the block in the segregated list */
 };
@@ -71,20 +62,21 @@ struct free_blk
 #define CHUNKSIZE (1 << 10)                   /* Extend heap by this amount (words) */
 #define NUM_LIST 20                           /* Number of segregated list */
 
-static inline size_t max(size_t x, size_t y)
-{
+/* Return the largest number */
+static inline size_t max(size_t x, size_t y) {
     return x > y ? x : y;
 }
 
-static size_t align(size_t size)
-{
+/* Algin to double word size */
+static size_t align(size_t size) {
     return (size + ALIGNMENT - 1) & ~(ALIGNMENT - 1);
 }
 
+/* Check if the block is aligned */
 static bool is_aligned(size_t size) __attribute__((__unused__));
 
-static bool is_aligned(size_t size)
-{
+/* Check if the block is aligned */
+static bool is_aligned(size_t size) {
     return size % ALIGNMENT == 0;
 }
 
@@ -101,33 +93,28 @@ static void init_list();
 
 /* Given a block, obtain previous's block footer.
    Works for left-most block also. */
-static struct boundary_tag *prev_blk_footer(struct free_blk *blk)
-{
+static struct boundary_tag *prev_blk_footer(struct free_blk *blk) {
     return &blk->header - 1;
 }
 
 /* Return if block is free */
-static bool blk_free(struct free_blk *blk)
-{
+static bool blk_free(struct free_blk *blk) {
     return !blk->header.inuse;
 }
 
-/* Return size of block is free */
-static size_t blk_size(struct free_blk *blk)
-{
+/* Return the size of block */
+static size_t blk_size(struct free_blk *blk) {
     return blk->header.size;
 }
 
 /* Given a list element, return the block. */
-static struct free_blk *get_block(struct list_elem *e)
-{
+static struct free_blk *get_block(struct list_elem *e) {
     return (struct free_blk *)((size_t *)e - sizeof(struct boundary_tag) / WSIZE);
 }
 
 /* Given a block, obtain pointer to previous block.
    Not meaningful for left-most block. */
-static struct free_blk *prev_blk(struct free_blk *blk)
-{
+static struct free_blk *prev_blk(struct free_blk *blk) {
     struct boundary_tag *prevfooter = prev_blk_footer(blk);
     assert(prevfooter->size != 0);
     return (struct free_blk *)((void *)blk - WSIZE * prevfooter->size);
@@ -135,65 +122,60 @@ static struct free_blk *prev_blk(struct free_blk *blk)
 
 /* Given a block, obtain pointer to next block.
    Not meaningful for right-most block. */
-static struct free_blk *next_blk(struct free_blk *blk)
-{
+static struct free_blk *next_blk(struct free_blk *blk) {
     assert(blk_size(blk) != 0);
     return (struct free_blk *)((void *)blk + WSIZE * blk->header.size);
 }
 
-/* Given a block, obtain its footer boundary tag */
-static struct boundary_tag *get_footer(struct alloc_blk *blk)
-{
+/* Given an allocated block, obtain its footer boundary tag */
+static struct boundary_tag *get_footer(struct alloc_blk *blk) {
     return ((void *)blk + WSIZE * blk->header.size) - sizeof(struct boundary_tag);
 }
 
-/* Given a block, obtain its footer boundary tag */
-static struct boundary_tag *get_footer_free(struct free_blk *blk)
-{
+/* Given a free block, obtain its footer boundary tag */
+static struct boundary_tag *get_footer_free(struct free_blk *blk) {
     return ((void *)blk + WSIZE * blk->header.size) - sizeof(struct boundary_tag);
 }
 
-/* Set a block's size and inuse bit in header and footer */
-static void set_header_and_footer(struct alloc_blk *blk, int size, int inuse)
-{
+/* Set an allocated block's size and inuse bit in header and footer */
+static void set_header_and_footer(struct alloc_blk *blk, int size, int inuse) {
     blk->header.inuse = inuse;
     blk->header.size = size;
     *get_footer(blk) = blk->header; /* Copy header to footer */
 }
 
-/*Set a block'size and inuse bit in header and footer for free blocks.*/
-static void set_header_and_footer_free(struct free_blk *blk, int size, int inuse)
-{
+/*Set a free block'size and inuse bit in header and footer for free blocks.*/
+static void set_header_and_footer_free(struct free_blk *blk, int size, int inuse) {
     blk->header.inuse = inuse;
     blk->header.size = size;
     *get_footer_free(blk) = blk->header; /* Copy header to footer */
 }
 
-/* Check if the boundary_tag is FENCE */
-static bool is_fence(void *bt)
-{
+/* Check if the boundary_tag reaches a FENCE */
+static bool is_fence(void *bt) {
     return ((struct boundary_tag *)bt)->size == 0 && ((struct boundary_tag *)bt)->inuse == 1;
 }
 
-/* Mark a block as used and set its size. */
-static void mark_block_used(struct alloc_blk *blk, int size)
-{
+/* Mark an allocated block as used and set its size. */
+static void mark_block_used(struct alloc_blk *blk, int size) {
     set_header_and_footer(blk, size, 1);
 }
 
-/* Mark a block as free and set its size. */
-static void mark_block_free(struct free_blk *blk, int size)
-{
+/* Mark a free block as free and set its size. */
+static void mark_block_free(struct free_blk *blk, int size) {
     set_header_and_footer_free(blk, size, 0);
 }
 
 /*
  * mm_init - Initialize the memory manager
+ *
+ * Allocate the initial heap area, and place two fences for the prologue header
+ * and epilogue footer. As well as, initialize the segregated list.
+ *
+ * Return -1 if there was a problem in initializing the heap. Return 0 otherwise.
  */
-int mm_init(void)
-{
+int mm_init(void) {
     init_list();
-    /*Use assert statements to detect errors */
     assert(offsetof(struct alloc_blk, payload) == 4);
     assert(sizeof(struct boundary_tag) == 4);
     assert(sizeof(struct free_blk) == 4);
@@ -215,7 +197,6 @@ int mm_init(void)
 
     /* Extend the empty heap with a free block of CHUNKSIZE bytes */
     if (extend_heap(CHUNKSIZE) == NULL)
-        /*Return -1 if there is a problem during the initialization process, otherwise 0.*/
         return -1;
     return 0;
 }
