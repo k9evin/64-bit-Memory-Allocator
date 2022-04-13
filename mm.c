@@ -26,6 +26,7 @@
 #include "list.h"
 #include "memlib.h"
 
+/* The boundary tag structure */
 struct boundary_tag
 {
     size_t inuse : 1; // inuse bit
@@ -52,10 +53,17 @@ struct alloc_blk
     char payload[0];            /* offset 4, at address 0 mod 16 */
 };
 
+/* 
+ * A free block struct without payload, which contains a header and
+ * an element struct such that it can be placed and located in the list.
+ *
+ * If each block is aligned at 12 mod 16, each payload will
+ * be aligned at 0 mod 16.
+ */
 struct free_blk
 {
-    struct boundary_tag header; /* offset 0, at address 12 mod 16 */
-    struct list_elem elem;      /* position the block in the segregated list */
+    struct boundary_tag header;     /* offset 0, at address 12 mod 16 */
+    struct list_elem elem;          /* position the block in the segregated list */
 };
 
 /* Basic constants and macros */
@@ -223,6 +231,12 @@ int mm_init(void)
 
 /*
  * mm_malloc - Allocate a block with at least size bytes of payload
+ *
+ * Adjust the size to fit alignment requirements, and then find a fit
+ * for the block with adjusted size. If no fit is found, extend the heap
+ * to place the block.
+ *
+ * Return a pointer to an allocated block payload of at least size bytes.
  */
 void *mm_malloc(size_t size)
 {
@@ -282,7 +296,10 @@ void *mm_malloc(size_t size)
 }
 
 /*
- * mm_free - Free a block
+ * mm_free - Free a block pointed to by bp. This function work whn the passed in pointer
+ * was returuend by the call to mm_malloc and mm_realloc and has not been freed yet.
+ *
+ * The function returns nothing
  */
 void mm_free(void *bp)
 {
@@ -307,7 +324,16 @@ void mm_free(void *bp)
 }
 
 /*
- * mm_realloc - Naive implementation of realloc
+ * mm_realloc - Implementation of realloc
+ *
+ * If the ptr is NULL, then call mm_malloc with the given size.
+ * If the size is 0, then call mm_free and return NULL.
+ * If the ptr is not NULL, meaning that it has returned from a previous call to
+ * mm_malloc, or mm_realloc. Then mm_realloc should change the block size to the
+ * given value, and return the address of the new block. The contents of the new
+ * block should be the same as the old block.
+ *
+ *  Returns a pointer to an allocated region of at least size bytes
  */
 void *mm_realloc(void *ptr, size_t size)
 {
@@ -424,9 +450,11 @@ void *mm_realloc(void *ptr, size_t size)
     return newptr;
 }
 
-/* -------- The remaining routines are internal helper routines -------- */
+/* ========== The remaining routines are internal helper routines ========== */
 
-/* Initialize a free list */
+/*
+ * Initialize 20 segregated list with provided list.h functions
+ */
 static void init_list()
 {
     for (int i = 0; i < NUM_LIST; i++)
@@ -437,6 +465,14 @@ static void init_list()
 
 /*
  * coalesce - Boundary tag coalescing. Return ptr to coalesced block
+ *
+ * This function takes in a pointer to a free block and check its
+ * neightboring blocks to see if they are free. If both neighbors are allocated,
+ * then push the current block to the segregated list. If one of the neighbors is
+ * free, then merge them and push the merged block to the segregated list. If all
+ * neighbors are free, then push the merged three block to the segregated list.
+ *
+ * Return a pointer to the coalesced block.
  */
 static struct free_blk *coalesce(struct free_blk *bp)
 {
@@ -483,6 +519,8 @@ static struct free_blk *coalesce(struct free_blk *bp)
 
 /*
  * push_free_blk - Push a free block onto the free list
+ *
+ * It will find the coresponding segregated list and push the block to the list.
  */
 static void push_free_blk(struct free_blk *bp, size_t size)
 {
@@ -518,7 +556,13 @@ static void push_free_blk(struct free_blk *bp, size_t size)
 }
 
 /*
- * extend_heap - Extend heap with free block and return its block pointer !!!
+ * extend_heap - Extend heap with free block
+ *
+ * Before extending the heap, it makes sure that the size of the word is rounded to
+ * the ALIGNMENT, then it checks if it is larger than the MIN_BLOCK_SIZE_WORDS. Finally,
+ * it will extend the heap and mark the new block as free.
+ *
+ * Return a pointer to the new free block.
  */
 static struct free_blk *extend_heap(size_t words)
 {
@@ -541,8 +585,13 @@ static struct free_blk *extend_heap(size_t words)
 }
 
 /*
- * place - Place block of asize words at start of free block bp
- *         and split if remainder would be at least minimum block size !!!
+ * place - Place block of asize words at start of free block pointer
+ *
+ * Compare the size of the free block to the size of the block to be allocated.
+ * If the free block is larger than the block to be allocated and their difference
+ * is larger than the minimum block size, then split the free block into two blocks.
+ * Otherwise, just place the block to the free block.
+ *
  */
 static void *place(void *bp, size_t asize)
 {
@@ -567,6 +616,10 @@ static void *place(void *bp, size_t asize)
 
 /*
  * find_fit - Find a fit for a block with asize words
+ *
+ * Find the segregated list with the appropriate size and check if
+ * the size of the free block is large enough. If so, return the free block.
+ * Otherwise, return NULL to indicate there is no fit.
  */
 static void *find_fit(size_t asize)
 {
@@ -603,6 +656,7 @@ static void *find_fit(size_t asize)
     return NULL; /* No fit */
 }
 
+/* Team info */
 team_t team = {
     /* Team name */
     "Kevin and Kevin",
