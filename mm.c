@@ -34,8 +34,8 @@ struct boundary_tag {
 
 /* FENCE is used for heap prologue/epilogue. */
 const struct boundary_tag FENCE = {
-    .inuse = 1,        // inuse bit
-    .size = 0          // size of block, in words
+    .inuse = 1,  // inuse bit
+    .size = 0    // size of block, in words
 };
 
 /* A C struct describing the beginning of each block.
@@ -168,7 +168,7 @@ static void mark_block_free(struct free_blk *blk, int size) {
 
 /*
  * mm_init - Initialize the memory manager
- * 
+ *
  * Allocate the initial heap area, and place two fences for the prologue header
  * and epilogue footer. As well as, initialize the segregated list.
  *
@@ -204,28 +204,34 @@ int mm_init(void) {
 /*
  * mm_malloc - Allocate a block with at least size bytes of payload
  */
-void *mm_malloc(size_t size) {
-    struct alloc_blk *bp;
-    struct alloc_blk *new_block; /*a new block object*/
+void *mm_malloc(size_t size)
+{
+    struct alloc_blk *bp; /*a new alloc_blk object*/
+    struct alloc_blk *new_block; /*a new alloc_blk object*/
 
     /* Ignore spurious requests */
-    if (size == 0) {
+    if (size == 0)
+    {
         return NULL;
     }
 
     /* If size less than 512 then round up */
-    if (size < 512) {
+    if (size < 512)
+    {
         int i = 0;
         int t_size = 1;
 
-        while ((i < NUM_LIST - 1) && (t_size < size)) {
+        while ((i < NUM_LIST - 1) && (t_size < size))
+        {
             t_size = t_size << 1;
             i++;
         }
         size = t_size;
     }
 
-    if (segregated_list[0].head.next == NULL) {
+    /* If the segregated list is empty, then call mm_init() for initialization*/
+    if (segregated_list[0].head.next == NULL)
+    {
         mm_init();
     }
 
@@ -236,7 +242,8 @@ void *mm_malloc(size_t size) {
     size_t awords = max(MIN_BLOCK_SIZE_WORDS, align(size) / WSIZE); /* respect minimum size */
 
     /* Search the free list for a fit */
-    if ((bp = find_fit(awords)) != NULL) {
+    if ((bp = find_fit(awords)) != NULL)
+    {
         new_block = bp;
         bp = place(new_block, awords);
         return bp->payload;
@@ -249,14 +256,17 @@ void *mm_malloc(size_t size) {
 
     new_block = bp;
     bp = place(new_block, awords);
+    
+    /* Returns a pointer to an allocated block payload.*/
     return bp->payload;
 }
 
 /*
  * mm_free - Free a block
  */
-void mm_free(void *bp) {
-    assert (segregated_list != NULL);       // assert that mm_init was called
+void mm_free(void *bp)
+{
+    assert(segregated_list != NULL); // assert that mm_init was called
     if (bp == 0)
         return;
 
@@ -273,7 +283,8 @@ void mm_free(void *bp) {
 /*
  * mm_realloc - Naive implementation of realloc
  */
-void *mm_realloc(void *ptr, size_t size) {
+void *mm_realloc(void *ptr, size_t size)
+{
     size_t osize = size;
 
     /* If the pointer block is NULL, realloc should be the same as malloc */
@@ -281,7 +292,8 @@ void *mm_realloc(void *ptr, size_t size) {
         return mm_malloc(size);
 
     /* If the size if 0, free the block and return 0 */
-    if (size == 0) {
+    if (size == 0)
+    {
         mm_free(ptr);
         return NULL;
     }
@@ -299,8 +311,10 @@ void *mm_realloc(void *ptr, size_t size) {
     // In the following four cases we can eliminate copying the payload
 
     /* Case 1: new size is smaller than oldsize, split block and return ptr */
-    if (asize <= oldsize) {
-        if (oldsize - asize >= MIN_BLOCK_SIZE_WORDS) {
+    if (asize <= oldsize)
+    {
+        if (oldsize - asize >= MIN_BLOCK_SIZE_WORDS)
+        {
             mark_block_used(oldblock, asize);
             struct free_blk *next_bp = (struct free_blk *)((size_t *)oldblock + asize);
             mark_block_free(next_bp, oldsize - asize);
@@ -313,7 +327,8 @@ void *mm_realloc(void *ptr, size_t size) {
     struct free_blk *next_bp = (struct free_blk *)((size_t *)oldblock + oldsize);
 
     /* Case 2: ptr is the last block in the heap, extend the heap and coalesce mutually */
-    if (is_fence(next_bp)) {
+    if (is_fence(next_bp))
+    {
         extendwords = max(asize - oldsize, CHUNKSIZE);
         if ((next_bp = (void *)extend_heap(extendwords)) == NULL)
             return NULL;
@@ -323,18 +338,23 @@ void *mm_realloc(void *ptr, size_t size) {
     }
 
     // If next block is free
-    if (next_bp->header.inuse == 0) {
+    if (next_bp->header.inuse == 0)
+    {
         /* Case 3: next block is a free block and have enough space to reallocate,
            coalesce two blocks mutually */
-        if (asize <= oldsize + blk_size(next_bp)) {
+        if (asize <= oldsize + blk_size(next_bp))
+        {
             size_t next_size = blk_size(next_bp);
-            if (oldsize + next_size - asize >= MIN_BLOCK_SIZE_WORDS) {
+            if (oldsize + next_size - asize >= MIN_BLOCK_SIZE_WORDS)
+            {
                 list_remove(&next_bp->elem);
                 mark_block_used(oldblock, asize);
                 struct free_blk *new_blk = (struct free_blk *)((size_t *)oldblock + oldblock->header.size);
                 mark_block_free(new_blk, oldsize + next_size - asize);
                 push_free_blk(new_blk, blk_size(new_blk));
-            } else {
+            }
+            else
+            {
                 list_remove(&next_bp->elem);
                 mark_block_used(oldblock, oldsize + next_size);
             }
@@ -344,8 +364,10 @@ void *mm_realloc(void *ptr, size_t size) {
         /* Case 4: next block is a free block but do not have enough space to reallocate,
            but next block is the last block in the heap,
            extend the heap and coalesce two blocks mutually */
-        else {
-            if (is_fence(next_blk(next_bp))) {
+        else
+        {
+            if (is_fence(next_blk(next_bp)))
+            {
                 extendwords = max(asize - oldsize - blk_size(next_bp), CHUNKSIZE);
                 if ((void *)extend_heap(extendwords) == NULL)
                     return NULL;
@@ -359,7 +381,8 @@ void *mm_realloc(void *ptr, size_t size) {
     void *newptr = mm_malloc(osize);
 
     /* If malloc() fails, the original block is left untouched  */
-    if (!newptr) {
+    if (!newptr)
+    {
         return 0;
     }
 
@@ -375,8 +398,10 @@ void *mm_realloc(void *ptr, size_t size) {
 /* -------- The remaining routines are internal helper routines -------- */
 
 /* Initialize a free list */
-static void init_list() {
-    for (int i = 0; i < NUM_LIST; i++) {
+static void init_list()
+{
+    for (int i = 0; i < NUM_LIST; i++)
+    {
         list_init(&segregated_list[i]);
     }
 }
@@ -384,25 +409,29 @@ static void init_list() {
 /*
  * coalesce - Boundary tag coalescing. Return ptr to coalesced block
  */
-static struct free_blk *coalesce(struct free_blk *bp) {
+static struct free_blk *coalesce(struct free_blk *bp)
+{
     bool prev_alloc = prev_blk_footer(bp)->inuse; /* is previous block allocated? */
     bool next_alloc = !blk_free(next_blk(bp));    /* is next block allocated? */
     size_t size = blk_size(bp);
 
-    if (prev_alloc && next_alloc) { /* Case 1 */
+    if (prev_alloc && next_alloc)
+    { /* Case 1 */
         // both are allocated, nothing to coalesce
         // return bp;
         push_free_blk(bp, size);
     }
 
-    else if (prev_alloc && !next_alloc) { /* Case 2 */
+    else if (prev_alloc && !next_alloc)
+    { /* Case 2 */
         // combine this block and next block by extending it
         list_remove(&next_blk(bp)->elem);
         mark_block_free(bp, size + blk_size(next_blk(bp)));
         push_free_blk(bp, blk_size(bp));
     }
 
-    else if (!prev_alloc && next_alloc) { /* Case 3 */
+    else if (!prev_alloc && next_alloc)
+    { /* Case 3 */
         // combine previous and this block by extending previous
         bp = prev_blk(bp);
         list_remove(&bp->elem);
@@ -410,7 +439,8 @@ static struct free_blk *coalesce(struct free_blk *bp) {
         push_free_blk(bp, blk_size(bp));
     }
 
-    else { /* Case 4 */
+    else
+    { /* Case 4 */
         // combine all previous, this, and next block into one
         list_remove(&next_blk(bp)->elem);
         list_remove(&prev_blk(bp)->elem);
@@ -425,22 +455,29 @@ static struct free_blk *coalesce(struct free_blk *bp) {
 /*
  * push_free_blk - Push a free block onto the free list
  */
-static void push_free_blk(struct free_blk *bp, size_t size) {
+static void push_free_blk(struct free_blk *bp, size_t size)
+{
     struct list_elem *before = &bp->elem;
     // choose the list with appropriate size
     int i = 0;
-    while (i < NUM_LIST - 1 && size > 1) {
+    while (i < NUM_LIST - 1 && size > 1)
+    {
         size = size >> 1;
         i++;
     }
 
-    if (list_empty(&segregated_list[i])) {
+    if (list_empty(&segregated_list[i]))
+    {
         list_push_front(&segregated_list[i], before);
-    } else {
+    }
+    else
+    {
         struct list_elem *e = list_begin(&segregated_list[i]);
         size_t free_size = blk_size(get_block(e));
-        while (e != list_end(&segregated_list[i])) {
-            if (size <= free_size) {
+        while (e != list_end(&segregated_list[i]))
+        {
+            if (size <= free_size)
+            {
                 break;
             }
 
@@ -454,7 +491,8 @@ static void push_free_blk(struct free_blk *bp, size_t size) {
 /*
  * extend_heap - Extend heap with free block and return its block pointer !!!
  */
-static struct free_blk *extend_heap(size_t words) {
+static struct free_blk *extend_heap(size_t words)
+{
     words = (words + 1) & ~1;                 /* align to double word boundary */
     words = max(words, MIN_BLOCK_SIZE_WORDS); /* compare to minimum block size, and get the max */
 
@@ -477,17 +515,21 @@ static struct free_blk *extend_heap(size_t words) {
  * place - Place block of asize words at start of free block bp
  *         and split if remainder would be at least minimum block size !!!
  */
-static void *place(void *bp, size_t asize) {
+static void *place(void *bp, size_t asize)
+{
     void *block;
 
     size_t csize = blk_size(bp);
 
-    if ((csize - asize) >= MIN_BLOCK_SIZE_WORDS) {
+    if ((csize - asize) >= MIN_BLOCK_SIZE_WORDS)
+    {
         mark_block_free((struct free_blk *)bp, csize - asize);
         block = next_blk(bp);
         mark_block_used((struct alloc_blk *)block, asize);
         return block;
-    } else {
+    }
+    else
+    {
         list_remove(&((struct free_blk *)bp)->elem);
         mark_block_used(bp, csize);
         return bp;
@@ -497,26 +539,32 @@ static void *place(void *bp, size_t asize) {
 /*
  * find_fit - Find a fit for a block with asize words
  */
-static void *find_fit(size_t asize) {
+static void *find_fit(size_t asize)
+{
     /* First fit search */
     int new_list = 0;
     size_t new_size = asize;
     struct free_blk *blk_ptr;
 
-    while ((new_list < NUM_LIST - 1) && (new_size > 1)) {
+    while ((new_list < NUM_LIST - 1) && (new_size > 1))
+    {
         new_size = new_size >> 1;
         new_list++;
     }
 
-    for (; new_list < NUM_LIST; new_list++) {
-        if (list_empty(&segregated_list[new_list])) {
+    for (; new_list < NUM_LIST; new_list++)
+    {
+        if (list_empty(&segregated_list[new_list]))
+        {
             continue;
         }
 
-        for (struct list_elem *element = list_begin(&segregated_list[new_list]); element != list_end(&segregated_list[new_list]); element = list_next(element)) {
+        for (struct list_elem *element = list_begin(&segregated_list[new_list]); element != list_end(&segregated_list[new_list]); element = list_next(element))
+        {
             blk_ptr = get_block(element);
 
-            if (blk_size(blk_ptr) >= asize) {
+            if (blk_size(blk_ptr) >= asize)
+            {
                 return blk_ptr;
             }
         }
