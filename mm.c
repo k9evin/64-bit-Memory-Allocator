@@ -66,9 +66,9 @@ struct free_blk {
 /* Basic constants and macros */
 #define WSIZE sizeof(struct boundary_tag)     /* Word and header/footer size (bytes) */
 #define DSIZE 2 * sizeof(struct boundary_tag) /* Doubleword size (bytes) */
-#define MIN_BLOCK_SIZE_WORDS 4                /* Minimum block size in words */
+#define MIN_BLOCK_SIZE_WORDS 8                /* Minimum block size in words */
 #define CHUNKSIZE (1 << 10)                   /* Extend heap by this amount (words) */
-#define NUM_LIST 20                           /* Number of segregated list */
+#define NUM_LIST 10                           /* Number of segregated list */
 
 /* Return the largest number */
 static inline size_t max(size_t x, size_t y) {
@@ -213,7 +213,6 @@ int mm_init(void) {
  */
 void *mm_malloc(size_t size) {
     struct alloc_blk *bp;        /*a new alloc_blk object*/
-    struct alloc_blk *new_block; /*a new alloc_blk object*/
 
     /* Ignore spurious requests */
     if (size == 0) {
@@ -222,7 +221,6 @@ void *mm_malloc(size_t size) {
 
     /* If size less than 512 then round up */
     if (size < 512) {
-        printf("happened\n");
         int i = 0;
         int t_size = 1;
 
@@ -231,6 +229,13 @@ void *mm_malloc(size_t size) {
             i++;
         }
         size = t_size;
+
+        // for (int i = 0; i < NUM_LIST - 1; i++) {
+        //     if (size <= (1 << i)) {
+        //         size = (1 << i);
+        //         break;
+        //     }
+        // }
     }
 
     /* If heap is not allocated, call mm_init() */
@@ -246,8 +251,7 @@ void *mm_malloc(size_t size) {
 
     /* Search the free list for a fit */
     if ((bp = find_fit(awords)) != NULL) {
-        new_block = bp;
-        bp = place(new_block, awords);
+        bp = place(bp, awords);
         return bp->payload;
     }
 
@@ -256,8 +260,7 @@ void *mm_malloc(size_t size) {
     if ((bp = (struct alloc_blk *)extend_heap(extendwords)) == NULL)
         return NULL;
 
-    new_block = bp;
-    bp = place(new_block, awords);
+    bp = place(bp, awords);
 
     /* Returns a pointer to an allocated block payload.*/
     return bp->payload;
@@ -279,10 +282,6 @@ void mm_free(void *bp) {
 
     /* Find block from user pointer */
     struct free_blk *free_blk = bp - offsetof(struct alloc_blk, payload);
-
-    /* If the segregated list is empty, then call mm_init() for initialization*/
-    if (segregated_list[0].head.next == NULL)
-        mm_init();
 
     /* Set the block as free */
     mark_block_free(free_blk, blk_size(free_blk));
