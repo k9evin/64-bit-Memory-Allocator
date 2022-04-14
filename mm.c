@@ -90,7 +90,7 @@ static bool is_aligned(size_t size) {
 
 /* Global variables */
 static struct list segregated_list[NUM_LIST];   /* free block list */
-static struct alloc_blk *heap_listp = 0;            /* Pointer to first block */
+static struct alloc_blk *heap_listp = 0;        /* Pointer to first block */
 
 /* Function prototypes for internal helper routines */
 static struct free_blk *extend_heap(size_t words);
@@ -99,6 +99,9 @@ static void *find_fit(size_t asize);
 static struct free_blk *coalesce(struct free_blk *bp);
 static void push_free_blk(struct free_blk *bp, size_t size);
 static void init_list();
+static int find_position(size_t size);
+static int round_up(size_t size);
+static void split_blk(struct alloc_blk *oldblock, size_t ori_size, size_t req_size);
 
 /* Given a block, obtain previous's block footer.
    Works for left-most block also. */
@@ -220,23 +223,7 @@ void *mm_malloc(size_t size) {
     }
 
     /* If size less than 512 then round up */
-    if (size < 512) {
-        int i = 0;
-        int t_size = 1;
-
-        while ((i < NUM_LIST - 1) && (t_size < size)) {
-            t_size = t_size << 1;
-            i++;
-        }
-        size = t_size;
-
-        // for (int i = 0; i < NUM_LIST - 1; i++) {
-        //     if (size <= (1 << i)) {
-        //         size = (1 << i);
-        //         break;
-        //     }
-        // }
-    }
+    if (size < 512) size = round_up(size);
 
     /* If heap is not allocated, call mm_init() */
     if (heap_listp == 0) {
@@ -314,7 +301,7 @@ void *mm_realloc(void *ptr, size_t size) {
         return mm_malloc(size);
     }
 
-    size_t next_size = size;
+    size_t temp_size = size;
 
     /* Copy the old data. */
     struct alloc_blk *oldblock = ptr - offsetof(struct alloc_blk, payload);
@@ -329,10 +316,7 @@ void *mm_realloc(void *ptr, size_t size) {
     /* Case 0: The requested size is smaller than the original size */
     if (req_size <= ori_size) {
         if (ori_size - req_size >= MIN_BLOCK_SIZE_WORDS) {
-            mark_block_used(oldblock, req_size);
-            struct free_blk *bp = next_blk((struct free_blk *)oldblock);
-            mark_block_free(bp, ori_size - req_size);
-            push_free_blk(bp, blk_size(bp));
+            split_blk(oldblock, ori_size, req_size);
         }
         return ptr;
     }
@@ -345,16 +329,13 @@ void *mm_realloc(void *ptr, size_t size) {
     if (!next_alloc) {
         /* Case 1: The requested size is smaller than the combined block size */
         if (req_size <= ori_size + blk_size(next_bp)) {
-            size_t next_size = blk_size(next_bp);
-            if (ori_size + next_size - req_size >= MIN_BLOCK_SIZE_WORDS) {
+            size_t temp_size = blk_size(next_bp);
+            if (ori_size + temp_size - req_size >= MIN_BLOCK_SIZE_WORDS) {
                 list_remove(&next_bp->elem);
-                mark_block_used(oldblock, req_size);
-                struct free_blk *bp = next_blk((struct free_blk *)oldblock);
-                mark_block_free(bp, ori_size + next_size - req_size);
-                push_free_blk(bp, blk_size(bp));
+                split_blk(oldblock, ori_size + temp_size, req_size);
             } else {
                 list_remove(&next_bp->elem);
-                mark_block_used(oldblock, ori_size + next_size);
+                mark_block_used(oldblock, ori_size + temp_size);
             }
             return ptr;
         }
@@ -371,7 +352,7 @@ void *mm_realloc(void *ptr, size_t size) {
         return ptr;
     }
 
-    void *newptr = mm_malloc(next_size);
+    void *newptr = mm_malloc(temp_size);
 
     /* If realloc() fails the original block is left untouched  */
     if (!newptr) {
@@ -515,8 +496,6 @@ static struct free_blk *extend_heap(size_t words) {
  *
  */
 static void *place(void *bp, size_t asize) {
-    
-
     size_t csize = blk_size(bp);
 
     if ((csize - asize) >= MIN_BLOCK_SIZE_WORDS) {
@@ -539,21 +518,12 @@ static void *place(void *bp, size_t asize) {
  * Otherwise, return NULL to indicate there is no fit.
  */
 static void *find_fit(size_t asize) {
-    /* First fit search */
-    int list_count = 0;
-    size_t next_size = asize;
+    /* Find the corresponding list location */
+    int list_count = find_position(asize);
     struct free_blk *blk_ptr;
-    int threshold = 20;
 
-    /* Check to see the current location of the list*/
-    while ((list_count < NUM_LIST - 1) && (next_size > 1)) {
-        //printf("find_fit before: next_size: %ld, list_count: %d\n", next_size, list_count);
-        next_size = next_size >> 1;
-        //printf("find_fit after: next_size: %ld, list_count: %d\n", next_size, list_count);
-        list_count++;
-    }
-    //list_count = 31 - __builtin_clz(asize) - 1;
-
+    /* If traverse a list more than 20 times, then jump to the next list */
+    int threshold = 20;  
     /*Continue if the list is empty*/
     for (; list_count < NUM_LIST; list_count++) {
         if (list_empty(&segregated_list[list_count])) {
@@ -561,7 +531,10 @@ static void *find_fit(size_t asize) {
         }
         int count = 0;
         /*Check the element in the list*/
-        for (struct list_elem *element = list_begin(&segregated_list[list_count]); element != list_end(&segregated_list[list_count]); element = list_next(element)) {
+        for (struct list_elem *element = list_begin(&segregated_list[list_count]); 
+            element != list_end(&segregated_list[list_count]); 
+            element = list_next(element)) {
+
             if (count > threshold) {
                 break;
             }
@@ -575,6 +548,52 @@ static void *find_fit(size_t asize) {
         }
     }
     return NULL; /* No fit */
+}
+
+/*
+ * find_position - Find the position of the segregated list
+ *
+ * It will find the coresponding segregated list and return the position.
+ * This will be the index of the segregated list to start traversing.
+ */
+static int find_position(size_t asize) {
+    int list_count = 0;
+    size_t temp_size = asize;
+    while ((list_count < NUM_LIST - 1) && (temp_size > 1)) {
+        temp_size = temp_size >> 1;
+        list_count++;
+    }
+    return list_count;
+}
+
+/*
+ * round_up - Round up to the 2^n using bitwise operation
+ * 
+ * Return the rounded-up value.
+ */
+static int round_up(size_t size) {
+    int i = 0;
+    int t_size = 1;
+
+    while ((i < NUM_LIST - 1) && (t_size < size)) {
+        t_size = t_size << 1;
+        i++;
+    }
+    return t_size;
+}
+
+/* split_block - Split an allocated block into two blocks
+ *
+ * It will split the block if there is enough space for a 
+ * MIN_BLOCK_SIZE_WORDS.
+ *
+ * The function does not return anything.
+ */
+static void split_blk(struct alloc_blk *oldblock, size_t ori_size, size_t req_size) {
+    mark_block_used(oldblock, req_size);
+    struct free_blk *bp = next_blk((struct free_blk *)oldblock);
+    mark_block_free(bp, ori_size - req_size);
+    push_free_blk(bp, blk_size(bp));
 }
 
 /* Team info */
