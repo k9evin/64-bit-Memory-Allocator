@@ -89,7 +89,8 @@ static bool is_aligned(size_t size) {
 }
 
 /* Global variables */
-static struct list segregated_list[NUM_LIST];
+static struct list segregated_list[NUM_LIST];   /* free block list */
+static struct alloc_blk *heap_listp = 0;            /* Pointer to first block */
 
 /* Function prototypes for internal helper routines */
 static struct free_blk *extend_heap(size_t words);
@@ -113,11 +114,6 @@ static bool blk_free(struct free_blk *blk) {
 /* Return the size of block */
 static size_t blk_size(struct free_blk *blk) {
     return blk->header.size;
-}
-
-/* Given a list element, return the block. */
-static struct free_blk *get_block(struct list_elem *e) {
-    return (struct free_blk *)((size_t *)e - sizeof(struct boundary_tag) / WSIZE);
 }
 
 /* Given a block, obtain pointer to previous block.
@@ -159,11 +155,6 @@ static void set_header_and_footer_free(struct free_blk *blk, int size, int inuse
     *get_footer_free(blk) = blk->header; /* Copy header to footer */
 }
 
-/* Check if the boundary_tag reaches a FENCE */
-static bool is_fence(void *bt) {
-    return ((struct boundary_tag *)bt)->size == 0 && ((struct boundary_tag *)bt)->inuse == 1;
-}
-
 /* Mark an allocated block as used and set its size. */
 static void mark_block_used(struct alloc_blk *blk, int size) {
     set_header_and_footer(blk, size, 1);
@@ -201,11 +192,13 @@ int mm_init(void) {
      * left-most block.
      */
     initial[2] = FENCE; /* Prologue footer */
+    heap_listp = (struct alloc_blk *)&initial[3];
     initial[3] = FENCE; /* Epilogue header */
 
     /* Extend the empty heap with a free block of CHUNKSIZE bytes */
-    if (extend_heap(CHUNKSIZE) == NULL)
+    if (extend_heap(CHUNKSIZE) == NULL) {
         return -1;
+    }
     return 0;
 }
 
@@ -229,6 +222,7 @@ void *mm_malloc(size_t size) {
 
     /* If size less than 512 then round up */
     if (size < 512) {
+        printf("happened\n");
         int i = 0;
         int t_size = 1;
 
@@ -239,12 +233,12 @@ void *mm_malloc(size_t size) {
         size = t_size;
     }
 
-    /* If the segregated list is empty, then call mm_init() for initialization*/
-    if (segregated_list[0].head.next == NULL) {
+    /* If heap is not allocated, call mm_init() */
+    if (heap_listp == 0) {
         mm_init();
     }
 
-    /* Adjust block size to include overhead and alignment reqs. */
+    /* Adjust block size to include overhead and alignment reqs */
     size += 2 * sizeof(struct boundary_tag); /* account for tags */
 
     /* Adjusted block size in words */
@@ -277,6 +271,7 @@ void *mm_malloc(size_t size) {
  */
 void mm_free(void *bp) {
     assert(segregated_list != NULL);  // assert that mm_init was called
+    assert(heap_listp != 0);          // assert that mm_init was called
 
     /*Return nothing*/
     if (bp == 0)
@@ -347,7 +342,7 @@ void *mm_realloc(void *ptr, size_t size) {
     struct free_blk *new_bp = (struct free_blk *)((size_t *)oldblock + oldsize);
 
     /*Case 2: When the break pointer is at the last block in the heap*/
-    if (is_fence(new_bp)) {
+    if (new_bp->header.size == 0 && new_bp->header.inuse == 1) {
         size_t extendwords = max(awords - oldsize, CHUNKSIZE);
         if ((new_bp = (void *)extend_heap(extendwords)) == NULL) {
             return NULL;
@@ -378,7 +373,7 @@ void *mm_realloc(void *ptr, size_t size) {
         }
         /*If the next block pointer is free and there is no space for reallocation.*/
         else {
-            if (is_fence(next_blk(new_bp))) {
+            if (next_blk(new_bp)->header.size == 0 && next_blk(new_bp)->header.inuse == 1) {
                 size_t extendwords = max(awords - oldsize - blk_size(new_bp), CHUNKSIZE);
                 if ((void *)extend_heap(extendwords) == NULL) {
                     return NULL;
@@ -485,14 +480,17 @@ static void push_free_blk(struct free_blk *bp, size_t size) {
         list_push_front(&segregated_list[i], before);
     } else {
         struct list_elem *e = list_begin(&segregated_list[i]);
-        size_t free_size = blk_size(get_block(e));
+        struct free_blk *blk = list_entry(e, struct free_blk, elem);
+        size_t free_size = blk_size(blk);
         while (e != list_end(&segregated_list[i])) {
             if (size <= free_size) {
                 break;
             }
 
             e = list_next(e);
-            free_size = blk_size(get_block(e));
+
+            struct free_blk *blk = list_entry(e, struct free_blk, elem);
+            free_size = blk_size(blk);
         }
         list_insert(e, before);
     }
@@ -508,8 +506,8 @@ static void push_free_blk(struct free_blk *bp, size_t size) {
  * Return a pointer to the new free block.
  */
 static struct free_blk *extend_heap(size_t words) {
-    words = (words + 1) & ~1;                 /* align to double word boundary */
-    words = max(words, MIN_BLOCK_SIZE_WORDS); /* compare to minimum block size, and get the max */
+    words = words * WSIZE;                                    /* convert the words to bytes */
+    words = max(MIN_BLOCK_SIZE_WORDS, align(words) / WSIZE);  /* compare to minimum block size, and get the max */
 
     void *bp = mem_sbrk(words * WSIZE);
 
@@ -578,7 +576,7 @@ static void *find_fit(size_t asize) {
         }
         /*Check the element in the list*/
         for (struct list_elem *element = list_begin(&segregated_list[new_list]); element != list_end(&segregated_list[new_list]); element = list_next(element)) {
-            blk_ptr = get_block(element);
+            blk_ptr = list_entry(element, struct free_blk, elem);
             /* Return the block pointer if the size of block pointer is larger than asize words*/
             if (blk_size(blk_ptr) >= asize) {
                 return blk_ptr;
