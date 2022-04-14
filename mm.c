@@ -66,7 +66,7 @@ struct free_blk {
 /* Basic constants and macros */
 #define WSIZE sizeof(struct boundary_tag)     /* Word and header/footer size (bytes) */
 #define DSIZE 2 * sizeof(struct boundary_tag) /* Doubleword size (bytes) */
-#define MIN_BLOCK_SIZE_WORDS 8                /* Minimum block size in words */
+#define MIN_BLOCK_SIZE_WORDS 4                /* Minimum block size in words */
 #define CHUNKSIZE (1 << 10)                   /* Extend heap by this amount (words) */
 #define NUM_LIST 10                           /* Number of segregated list */
 
@@ -390,7 +390,7 @@ void *mm_realloc(void *ptr, size_t size) {
 /* ========== The remaining routines are internal helper routines ========== */
 
 /*
- * Initialize 20 segregated list with provided list.h functions
+ * Initialize 10 segregated list with provided list.h functions
  */
 static void init_list() {
     for (int i = 0; i < NUM_LIST; i++) {
@@ -460,21 +460,21 @@ static void push_free_blk(struct free_blk *bp, size_t size) {
         i++;
     }
 
+    //printf("push_free_blk: size: %ld, i: %d\n", size, i);
+
     if (list_empty(&segregated_list[i])) {
         list_push_front(&segregated_list[i], before);
     } else {
         struct list_elem *e = list_begin(&segregated_list[i]);
-        struct free_blk *blk = list_entry(e, struct free_blk, elem);
-        size_t free_size = blk_size(blk);
+        // struct free_blk *blk = list_entry(e, struct free_blk, elem);
+        // size_t free_size = blk_size(blk);
         while (e != list_end(&segregated_list[i])) {
+            struct free_blk *blk = list_entry(e, struct free_blk, elem);
+            size_t free_size = blk_size(blk);
             if (size <= free_size) {
                 break;
             }
-
             e = list_next(e);
-
-            struct free_blk *blk = list_entry(e, struct free_blk, elem);
-            free_size = blk_size(blk);
         }
         list_insert(e, before);
     }
@@ -540,28 +540,38 @@ static void *place(void *bp, size_t asize) {
  */
 static void *find_fit(size_t asize) {
     /* First fit search */
-    int new_list = 0;
+    int list_count = 0;
     size_t next_size = asize;
     struct free_blk *blk_ptr;
+    int threshold = 20;
 
     /* Check to see the current location of the list*/
-    while ((new_list < NUM_LIST - 1) && (next_size > 1)) {
+    while ((list_count < NUM_LIST - 1) && (next_size > 1)) {
+        //printf("find_fit before: next_size: %ld, list_count: %d\n", next_size, list_count);
         next_size = next_size >> 1;
-        new_list++;
+        //printf("find_fit after: next_size: %ld, list_count: %d\n", next_size, list_count);
+        list_count++;
     }
+    //list_count = 31 - __builtin_clz(asize) - 1;
 
     /*Continue if the list is empty*/
-    for (; new_list < NUM_LIST; new_list++) {
-        if (list_empty(&segregated_list[new_list])) {
+    for (; list_count < NUM_LIST; list_count++) {
+        if (list_empty(&segregated_list[list_count])) {
             continue;
         }
+        int count = 0;
         /*Check the element in the list*/
-        for (struct list_elem *element = list_begin(&segregated_list[new_list]); element != list_end(&segregated_list[new_list]); element = list_next(element)) {
+        for (struct list_elem *element = list_begin(&segregated_list[list_count]); element != list_end(&segregated_list[list_count]); element = list_next(element)) {
+            if (count > threshold) {
+                break;
+            }
+            
             blk_ptr = list_entry(element, struct free_blk, elem);
             /* Return the block pointer if the size of block pointer is larger than asize words*/
             if (blk_size(blk_ptr) >= asize) {
                 return blk_ptr;
             }
+            count++;
         }
     }
     return NULL; /* No fit */
