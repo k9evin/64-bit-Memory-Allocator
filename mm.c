@@ -9,7 +9,35 @@
  * but unlike the book's version, it does not use C preprocessor
  * macros or explicit bit operations.
  *
- * Our implementation is adapted from the provided code by Dr. Back
+ * The implementation is adapted from the provided code by Dr. Back
+ *
+ * Our implementation uses boundary_tag to mark the header and footer
+ * of each block, fences to identify the boundaries of the heap, allocated
+ * block and free block, and a segregated list to store the free blocks.
+ *
+ * boundary_tag:
+ * The boundary tag stores the size of the block in words, and a inuse variable
+ * to indicate whether the block is allocated or free.
+ *
+ * alloc_blk:
+ * The allocated block contains the boundary tag for the header and footer, and
+ * the data is stored in the payload, which would be aligned at 0 mod 16.
+ *
+ * free_blk:
+ * The free block contains the boundary tag for the header and footer, similar to
+ * the allocated block. It has a list_elem structure which will be used to insert
+ * the free block into the segregated list.
+ *
+ * segregated_list:
+ * The segregated list is an array of linked lists using the list.c implementation.
+ * as reference. There are total of 10 lists, each list is for a specific size of
+ * free block. We implemented a find_position function to determine the corresponding
+ * list based on the size of the free block. Then we will loop throught the list
+ * from the returned position to the maximum list. However, this implementation
+ * would affect the thruput significantly. Therefore, we set a threshold value. If
+ * the program traverse the list more than the threshold value, we will break out
+ * from the loop and jump to the next list. With this implementation, we no longer
+ * need to traverse the whole list, which helps to improve the performance.
  */
 
 #include "mm.h"
@@ -89,8 +117,8 @@ static bool is_aligned(size_t size) {
 }
 
 /* Global variables */
-static struct list segregated_list[NUM_LIST];   /* free block list */
-static struct alloc_blk *heap_listp = 0;        /* Pointer to first block */
+static struct list segregated_list[NUM_LIST]; /* free block list */
+static struct alloc_blk *heap_listp = 0;      /* Pointer to first block */
 
 /* Function prototypes for internal helper routines */
 static struct free_blk *extend_heap(size_t words);
@@ -215,7 +243,7 @@ int mm_init(void) {
  * Return a pointer to an allocated block payload of at least size bytes.
  */
 void *mm_malloc(size_t size) {
-    struct alloc_blk *bp;        /*a new alloc_blk object*/
+    struct alloc_blk *bp; /*a new alloc_blk object*/
 
     /* Ignore spurious requests */
     if (size == 0) {
@@ -323,7 +351,7 @@ void *mm_realloc(void *ptr, size_t size) {
 
     /*This is the next block pointer*/
     struct free_blk *next_bp = next_blk((struct free_blk *)oldblock);
-    bool next_alloc = !blk_free(next_bp);    /* is next block allocated? */
+    bool next_alloc = !blk_free(next_bp); /* is next block allocated? */
 
     /* If the next block is not allocated */
     if (!next_alloc) {
@@ -441,7 +469,7 @@ static void push_free_blk(struct free_blk *bp, size_t size) {
         i++;
     }
 
-    //printf("push_free_blk: size: %ld, i: %d\n", size, i);
+    // printf("push_free_blk: size: %ld, i: %d\n", size, i);
 
     if (list_empty(&segregated_list[i])) {
         list_push_front(&segregated_list[i], before);
@@ -523,7 +551,7 @@ static void *find_fit(size_t asize) {
     struct free_blk *blk_ptr;
 
     /* If traverse a list more than 20 times, then jump to the next list */
-    int threshold = 20;  
+    int threshold = 20;
     /*Continue if the list is empty*/
     for (; list_count < NUM_LIST; list_count++) {
         if (list_empty(&segregated_list[list_count])) {
@@ -531,14 +559,13 @@ static void *find_fit(size_t asize) {
         }
         int count = 0;
         /*Check the element in the list*/
-        for (struct list_elem *element = list_begin(&segregated_list[list_count]); 
-            element != list_end(&segregated_list[list_count]); 
-            element = list_next(element)) {
-
+        for (struct list_elem *element = list_begin(&segregated_list[list_count]);
+             element != list_end(&segregated_list[list_count]);
+             element = list_next(element)) {
             if (count > threshold) {
                 break;
             }
-            
+
             blk_ptr = list_entry(element, struct free_blk, elem);
             /* Return the block pointer if the size of block pointer is larger than asize words*/
             if (blk_size(blk_ptr) >= asize) {
@@ -568,7 +595,7 @@ static int find_position(size_t asize) {
 
 /*
  * round_up - Round up to the 2^n using bitwise operation
- * 
+ *
  * Return the rounded-up value.
  */
 static int round_up(size_t size) {
@@ -584,7 +611,7 @@ static int round_up(size_t size) {
 
 /* split_block - Split an allocated block into two blocks
  *
- * It will split the block if there is enough space for a 
+ * It will split the block if there is enough space for a
  * MIN_BLOCK_SIZE_WORDS.
  *
  * The function does not return anything.
