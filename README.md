@@ -10,7 +10,7 @@ This tool also has the great advantage of helping students visualize memory writ
 ![Screenshot of the memory viewer in action](images/help1.png)
 
 ## Getting Started
-Assuming ``~cs3214/bin`` is in your ``$PATH`` (which you should've done for the earlier projects), running the tool is as simple as running ``heapinspector.sh`` in the directory containing your ``mm.c`` file. There are some command line options you should be aware of.
+Assuming ``~/bin`` is in your ``$PATH`` (which you should've done for the earlier projects), running the tool is as simple as running ``heapinspector.sh`` in the directory containing your ``mm.c`` file. There are some command line options you should be aware of.
 
 Various flags can be passed to the heap inspector. These are as follows:
 
